@@ -2,136 +2,185 @@ import React, { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster } from '@/components/ui/toaster';
-import GameLobby from '@/components/GameLobby';
-import GameArena from '@/components/GameArena';
 import WalletConnection from '@/components/WalletConnection';
+import GameLobby from '@/components/GameLobby';
+import QuizGame from '@/components/QuizGame';
+import Leaderboard from '@/components/Leaderboard';
 import { useMultiSynq } from '@/hooks/useMultiSynq';
 import { useWallet } from '@/hooks/useWallet';
+import { toast } from '@/components/ui/use-toast';
 
 function App() {
-  const [appState, setAppState] = useState('lobby'); // lobby, connecting, arena
-  const { isConnected, connect, disconnect, address } = useWallet();
+  const [gameState, setGameState] = useState('lobby'); // lobby, playing, finished
+  const [currentRoom, setCurrentRoom] = useState(null);
+  const { isConnected, address, connectWallet, disconnectWallet } = useWallet();
   const { 
-    connect: connectMultiSynq,
-    disconnect: disconnectMultiSynq,
+    connectionStatus, 
     players, 
-    gameState,
-    sendGameAction,
-    connectionStatus,
-  } = useMultiSynq(address);
+    gameData, 
+    joinRoom, 
+    leaveRoom, 
+    sendAnswer,
+    leaderboard 
+  } = useMultiSynq();
 
   useEffect(() => {
-    if (connectionStatus === 'connected' && appState === 'connecting') {
-        setAppState('arena');
+    if (connectionStatus === 'connected') {
+      toast({
+        title: "🎮 MultiSynq Connected!",
+        description: "The real-time multiplayer experience is starting!",
+      });
+    } else if (connectionStatus === 'disconnected') {
+      toast({
+        title: "⚠️ Connection Lost",
+        description: "Reconnecting to MultiSynq...",
+        variant: "destructive"
+      });
     }
-     if (connectionStatus === 'disconnected' && appState === 'arena') {
-        setAppState('lobby');
-    }
-  }, [connectionStatus, appState]);
+  }, [connectionStatus]);
 
-
-  const handleStartGame = async () => {
+  const handleJoinRoom = async (roomId) => {
     if (!isConnected) {
+      toast({
+        title: "🔗 Wallet Connection Required",
+        description: "Please connect your wallet to join the game!",
+        variant: "destructive"
+      });
       return;
     }
-    setAppState('connecting');
-    await connectMultiSynq();
+
+    try {
+      await joinRoom(roomId, address);
+      setCurrentRoom(roomId);
+      setGameState('playing');
+      toast({
+        title: "🎯 You've Joined the Game!",
+        description: `Room ${roomId} - The game is starting!`,
+      });
+    } catch (error) {
+      toast({
+        title: "❌ Connection Error",
+        description: "An error occurred while joining the room.",
+        variant: "destructive"
+      });
+    }
   };
 
-  const handleEndGame = () => {
-    disconnectMultiSynq();
-    setAppState('lobby');
+  const handleLeaveRoom = () => {
+    if (currentRoom) {
+      leaveRoom(currentRoom);
+      setCurrentRoom(null);
+      setGameState('lobby');
+      toast({
+        title: "👋 You've Left the Game",
+        description: "You have returned to the main lobby.",
+      });
+    }
   };
 
-  const backgroundPattern = `data:image/svg+xml,%3Csvg width='52' height='26' viewBox='0 0 52 26' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%233b82f6' fill-opacity='0.04'%3E%3Cpath d='M10 10c0-2.21-1.79-4-4-4-3.314 0-6-2.686-6-6h2c0 2.21 1.79 4 4 4 3.314 0 6 2.686 6 6 0 2.21 1.79 4 4 4 3.314 0 6 2.686 6 6 0 2.21 1.79 4 4 4v2c-3.314 0-6-2.686-6-6 0-2.21-1.79-4-4-4-3.314 0-6-2.686-6-6zm25.464-1.95l8.486 8.486-1.414 1.414-8.486-8.486 1.414-1.414z' /%3E%3C/g%3E%3C/g%3E%3C/svg%3E`;
+  const handleGameFinish = () => {
+    setGameState('finished');
+  };
+
+  const handleBackToLobby = () => {
+    handleLeaveRoom();
+  };
 
   return (
     <>
       <Helmet>
-        <title>Monad Quiz Challenge - Real-time Trivia on Monad</title>
-        <meta name="description" content="A real-time multiplayer quiz game built on the Monad testnet using the MultiSynq API. Challenge your friends and test your knowledge!" />
+        <title>Monad Quiz Arena - Multiplayer Blockchain Quiz</title>
+        <meta name="description" content="A real-time multiplayer quiz game running on the Monad testnet. A blockchain-based competition experience powered by the MultiSynq API." />
       </Helmet>
       
-      <div className="min-h-screen relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-blue-900 to-purple-900">
-          <div 
-            className="absolute inset-0 opacity-50"
-            style={{ backgroundImage: `url("${backgroundPattern}")` }}
-          ></div>
+      <div className="min-h-screen cyber-grid relative overflow-hidden">
+        {/* Connection Status */}
+        <div className="connection-status">
+          <motion.div
+            initial={{ opacity: 0, x: 100 }}
+            animate={{ opacity: 1, x: 0 }}
+            className={`px-4 py-2 rounded-full text-sm font-medium ${
+              connectionStatus === 'connected' ? 'status-connected' :
+              connectionStatus === 'connecting' ? 'status-connecting' :
+              'status-disconnected'
+            }`}
+          >
+            {connectionStatus === 'connected' && '🟢 Connected'}
+            {connectionStatus === 'connecting' && '🟡 Connecting...'}
+            {connectionStatus === 'disconnected' && '🔴 Disconnected'}
+          </motion.div>
+        </div>
+
+        {/* Background Effects */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl floating"></div>
+          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl floating" style={{ animationDelay: '1s' }}></div>
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl floating" style={{ animationDelay: '2s' }}></div>
         </div>
 
         <div className="relative z-10">
           <AnimatePresence mode="wait">
-            {appState === 'lobby' && (
+            {!isConnected ? (
+              <motion.div
+                key="wallet"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ duration: 0.5 }}
+              >
+                <WalletConnection 
+                  onConnect={connectWallet}
+                  connectionStatus={connectionStatus}
+                />
+              </motion.div>
+            ) : gameState === 'lobby' ? (
               <motion.div
                 key="lobby"
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 50 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
+                exit={{ opacity: 0, y: -50 }}
                 transition={{ duration: 0.5 }}
               >
                 <GameLobby 
-                  onStartGame={handleStartGame}
-                  isWalletConnected={isConnected}
+                  onJoinRoom={handleJoinRoom}
+                  players={players}
+                  address={address}
+                  onDisconnect={disconnectWallet}
                 />
               </motion.div>
-            )}
-
-            {appState === 'connecting' && (
+            ) : gameState === 'playing' ? (
               <motion.div
-                key="connecting"
+                key="playing"
+                initial={{ opacity: 0, x: 100 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -100 }}
+                transition={{ duration: 0.5 }}
+              >
+                <QuizGame 
+                  gameData={gameData}
+                  players={players}
+                  onAnswer={sendAnswer}
+                  onLeave={handleLeaveRoom}
+                  onGameFinish={handleGameFinish}
+                  currentRoom={currentRoom}
+                />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="leaderboard"
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 1.1 }}
-                transition={{ duration: 0.5 }}
-                className="min-h-screen flex items-center justify-center"
-              >
-                <div className="text-center space-y-8">
-                   <motion.div
-                    className="w-32 h-32 mx-auto relative"
-                    animate={{ rotate: [0, 360] }}
-                    transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-                  >
-                    <div className="absolute inset-0 border-4 border-blue-500/50 rounded-full"></div>
-                    <div className="absolute inset-2 border-4 border-purple-500/70 rounded-full animate-ping"></div>
-                  </motion.div>
-                  
-                  <div className="space-y-4">
-                    <h2 className="text-4xl font-black orbitron bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent tracking-wider">
-                      CONNECTING TO SERVER
-                    </h2>
-                    <p className="text-gray-300">Preparing the Quiz Arena...</p>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {appState === 'arena' && (
-              <motion.div
-                key="arena"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
+                exit={{ opacity: 0, scale: 0.9 }}
                 transition={{ duration: 0.5 }}
               >
-                <GameArena 
-                  onEndGame={handleEndGame}
-                  players={players}
-                  playerAddress={address}
-                  sendGameAction={sendGameAction}
-                  gameState={gameState}
+                <Leaderboard 
+                  leaderboard={leaderboard}
+                  onBackToLobby={handleBackToLobby}
                 />
               </motion.div>
             )}
           </AnimatePresence>
         </div>
-
-        <WalletConnection 
-          isConnected={isConnected}
-          onConnect={connect}
-          onDisconnect={disconnect}
-          address={address}
-        />
 
         <Toaster />
       </div>

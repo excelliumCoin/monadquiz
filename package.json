@@ -1,11 +1,11 @@
 {
-  "name": "multisynq-monad-quiz",
+  "name": "monad-quiz-game",
   "type": "module",
   "version": "0.0.0",
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node tools/generate-llms.js || true && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -21,13 +21,12 @@
     "@radix-ui/react-toast": "^1.1.5",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
+    "ethers": "^6.8.0",
     "framer-motion": "^10.16.4",
-    "he": "^1.2.0",
     "lucide-react": "^0.285.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-helmet": "^6.1.0",
-    "socket.io-client": "^4.7.5",
     "tailwind-merge": "^1.14.0",
     "tailwindcss-animate": "^1.0.7"
   },
