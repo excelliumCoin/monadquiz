@@ -7,108 +7,38 @@ import { toast } from '@/components/ui/use-toast';
 function QuizGame({ gameData, players, onAnswer, onLeave, onGameFinish, currentRoom }) {
   const [selectedAnswer, setSelectedAnswer] = useState(null);
   const [hasAnswered, setHasAnswered] = useState(false);
-  const [timeRemaining, setTimeRemaining] = useState(30);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [playerScores, setPlayerScores] = useState({});
   const [showResults, setShowResults] = useState(false);
-  const [correctAnswer, setCorrectAnswer] = useState(null);
 
-  const currentQuestion = gameData?.currentQuestion || gameData?.questions?.[currentQuestionIndex];
+  // Use MultiSynq state for these values
+  const currentQuestionIndex = gameData?.currentQuestionIndex || 0;
   const totalQuestions = gameData?.questions?.length || 5;
+  const timeRemaining = gameData?.timeRemaining ?? 30;
+  const currentQuestion = gameData?.currentQuestion || gameData?.questions?.[currentQuestionIndex];
+  const correctAnswer = currentQuestion?.correctAnswer;
 
-  useEffect(() => {
-    if (gameData?.timeRemaining) {
-      setTimeRemaining(gameData.timeRemaining);
+  // Use player scores from MultiSynq (either in players or gameData.leaderboard)
+  const getPlayerScore = (address) => {
+    if (gameData?.leaderboard) {
+      const entry = gameData.leaderboard.find(p => p.id === address || p.address === address);
+      return entry ? entry.score : 0;
     }
-  }, [gameData?.timeRemaining]);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeRemaining(prev => {
-        if (prev <= 1) {
-          if (!hasAnswered) {
-            handleTimeUp();
-          }
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [hasAnswered, currentQuestionIndex]);
-
-  const handleTimeUp = () => {
-    if (!hasAnswered) {
-      setHasAnswered(true);
-      setShowResults(true);
-      setCorrectAnswer(currentQuestion?.correctAnswer);
-      
-      toast({
-        title: "⏰ Time's Up!",
-        description: "Moving to the next question...",
-        variant: "destructive"
-      });
-
-      setTimeout(() => {
-        nextQuestion();
-      }, 3000);
-    }
+    const player = players.find(p => p.address === address);
+    return player?.score || 0;
   };
+
+  useEffect(() => {
+    // Reset answer state when question changes
+    setSelectedAnswer(null);
+    setHasAnswered(false);
+    setShowResults(false);
+  }, [currentQuestionIndex, currentQuestion?.id]);
 
   const handleAnswerSelect = (answerIndex) => {
     if (hasAnswered || timeRemaining <= 0) return;
-
     setSelectedAnswer(answerIndex);
     setHasAnswered(true);
     setShowResults(true);
-    setCorrectAnswer(currentQuestion?.correctAnswer);
-
-    // Send answer to MultiSynq
     onAnswer(currentQuestion?.id, answerIndex, players[0]?.address);
-
-    // Calculate score based on time remaining
-    const timeBonus = Math.floor((timeRemaining / 30) * 100);
-    const isCorrect = answerIndex === currentQuestion?.correctAnswer;
-    const points = isCorrect ? 100 + timeBonus : 0;
-
-    if (isCorrect) {
-      toast({
-        title: "🎉 Correct Answer!",
-        description: `You earned +${points} points!`,
-      });
-    } else {
-      toast({
-        title: "❌ Wrong Answer",
-        description: `The correct answer was: ${currentQuestion?.options[currentQuestion?.correctAnswer]}`,
-        variant: "destructive"
-      });
-    }
-
-    // Update player score
-    setPlayerScores(prev => ({
-      ...prev,
-      [players[0]?.address]: (prev[players[0]?.address] || 0) + points
-    }));
-
-    // Move to next question after showing results
-    setTimeout(() => {
-      nextQuestion();
-    }, 3000);
-  };
-
-  const nextQuestion = () => {
-    if (currentQuestionIndex < totalQuestions - 1) {
-      setCurrentQuestionIndex(prev => prev + 1);
-      setSelectedAnswer(null);
-      setHasAnswered(false);
-      setShowResults(false);
-      setCorrectAnswer(null);
-      setTimeRemaining(30);
-    } else {
-      // Game finished
-      onGameFinish();
-    }
   };
 
   const getAnswerClassName = (index) => {
@@ -117,15 +47,12 @@ function QuizGame({ gameData, players, onAnswer, onLeave, onGameFinish, currentR
         ? 'border-blue-500 bg-blue-500/20' 
         : 'border-gray-600 hover:border-blue-400/50 hover:bg-blue-500/10';
     }
-
     if (index === correctAnswer) {
       return 'correct-answer border-green-500';
     }
-    
     if (selectedAnswer === index && index !== correctAnswer) {
       return 'wrong-answer border-red-500';
     }
-
     return 'border-gray-600 opacity-50';
   };
 
@@ -163,7 +90,6 @@ function QuizGame({ gameData, players, onAnswer, onLeave, onGameFinish, currentR
               <span className="text-sm text-gray-400">Room:</span>
               <span className="ml-2 font-semibold text-blue-400">{currentRoom}</span>
             </div>
-            
             <div className="glass-effect px-4 py-2 rounded-lg">
               <span className="text-sm text-gray-400">Question:</span>
               <span className="ml-2 font-semibold text-purple-400">
@@ -204,7 +130,6 @@ function QuizGame({ gameData, players, onAnswer, onLeave, onGameFinish, currentR
               <h2 className="text-2xl font-semibold text-white mb-8 text-center leading-relaxed">
                 {currentQuestion.question}
               </h2>
-
               <div className="grid gap-4">
                 {currentQuestion.options.map((option, index) => (
                   <motion.button
@@ -255,9 +180,8 @@ function QuizGame({ gameData, players, onAnswer, onLeave, onGameFinish, currentR
                       </p>
                     </div>
                   )}
-                  
                   <div className="mt-4 text-gray-400">
-                    {currentQuestionIndex < totalQuestions - 1 ? 'Moving to the next question...' : 'Game finished!'}
+                    {currentQuestionIndex < totalQuestions - 1 ? 'Waiting for next question...' : 'Game finished!'}
                   </div>
                 </motion.div>
               )}
@@ -276,7 +200,6 @@ function QuizGame({ gameData, players, onAnswer, onLeave, onGameFinish, currentR
                 <Users className="w-5 h-5 mr-2 text-blue-400" />
                 Players
               </h3>
-              
               <div className="space-y-3">
                 {players.map((player, index) => (
                   <div key={player.id} className="flex items-center justify-between">
@@ -287,7 +210,7 @@ function QuizGame({ gameData, players, onAnswer, onLeave, onGameFinish, currentR
                       <span className="text-sm">{player.name || `Player ${index + 1}`}</span>
                     </div>
                     <span className="text-sm font-semibold text-yellow-400">
-                      {playerScores[player.address] || player.score || 0}
+                      {getPlayerScore(player.address)}
                     </span>
                   </div>
                 ))}
@@ -302,7 +225,6 @@ function QuizGame({ gameData, players, onAnswer, onLeave, onGameFinish, currentR
               className="glass-effect p-6 rounded-xl"
             >
               <h3 className="text-lg font-semibold mb-4">Progress</h3>
-              
               <div className="space-y-4">
                 <div>
                   <div className="flex justify-between text-sm mb-2">
@@ -316,7 +238,6 @@ function QuizGame({ gameData, players, onAnswer, onLeave, onGameFinish, currentR
                     ></div>
                   </div>
                 </div>
-
                 <div>
                   <div className="flex justify-between text-sm mb-2">
                     <span>Time</span>
