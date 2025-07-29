@@ -21,6 +21,7 @@ function App() {
     joinRoom, 
     leaveRoom, 
     sendAnswer,
+    sendGameAction,
     leaderboard 
   } = useMultiSynq();
 
@@ -66,15 +67,22 @@ function App() {
     }
   };
 
-  const handleLeaveRoom = () => {
+  const handleLeaveRoom = async () => {
     if (currentRoom) {
-      leaveRoom(currentRoom);
-      setCurrentRoom(null);
-      setGameState('lobby');
-      toast({
-        title: "👋 You've Left the Game",
-        description: "You have returned to the main lobby.",
-      });
+      try {
+        await leaveRoom(currentRoom);
+        setCurrentRoom(null);
+        setGameState('lobby');
+        toast({
+          title: "👋 You've Left the Game",
+          description: "You have returned to the main lobby.",
+        });
+      } catch (error) {
+        console.error('Error leaving room:', error);
+        // Still update local state even if the server request fails
+        setCurrentRoom(null);
+        setGameState('lobby');
+      }
     }
   };
 
@@ -84,6 +92,32 @@ function App() {
 
   const handleBackToLobby = () => {
     handleLeaveRoom();
+  };
+
+  const handleSendAnswer = async (questionId, answerIndex, playerAddress) => {
+    try {
+      await sendAnswer(questionId, answerIndex, playerAddress);
+    } catch (error) {
+      console.error('Error sending answer:', error);
+      toast({
+        title: "❌ Answer Error",
+        description: "Failed to send answer. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleSendGameAction = async (actionType, actionData) => {
+    try {
+      await sendGameAction(actionType, actionData);
+    } catch (error) {
+      console.error('Error sending game action:', error);
+      toast({
+        title: "❌ Action Error",
+        description: "Failed to send game action. Please try again.",
+        variant: "destructive"
+      });
+    }
   };
 
   return (
@@ -159,7 +193,7 @@ function App() {
                 <QuizGame 
                   gameData={gameData}
                   players={players}
-                  onAnswer={sendAnswer}
+                  onAnswer={handleSendAnswer}
                   onLeave={handleLeaveRoom}
                   onGameFinish={handleGameFinish}
                   currentRoom={currentRoom}

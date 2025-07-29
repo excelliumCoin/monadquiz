@@ -1,21 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
+import { MultiSynqClient } from '@/lib/multisynq-client';
 
 const MULTISYNQ_API_KEY = '2T3Pz87uuBgottPaS78miDAfbcCgl07ivyk6EkNTqq';
-const MULTISYNQ_WS_URL = 'wss://api.multisynq.io/ws';
 
 export function useMultiSynq() {
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [players, setPlayers] = useState([]);
   const [gameData, setGameData] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
-  const wsRef = useRef(null);
+  const clientRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
 
   useEffect(() => {
     connectToMultiSynq();
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
+      if (clientRef.current) {
+        clientRef.current.disconnect();
       }
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
@@ -24,47 +24,42 @@ export function useMultiSynq() {
   }, []);
 
   const connectToMultiSynq = () => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+    if (clientRef.current?.isConnected()) {
       return;
     }
     setConnectionStatus('connecting');
     
     try {
-      wsRef.current = new WebSocket(`${MULTISYNQ_WS_URL}?apiKey=${MULTISYNQ_API_KEY}`);
-      
-      wsRef.current.onopen = () => {
-        setConnectionStatus('connected');
-        console.log('Connected to MultiSynq');
-        if (reconnectTimeoutRef.current) {
-          clearTimeout(reconnectTimeoutRef.current);
-        }
-      };
-
-      wsRef.current.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
+      clientRef.current = new MultiSynqClient({
+        apiKey: MULTISYNQ_API_KEY,
+        onConnect: () => {
+          setConnectionStatus('connected');
+          console.log('Connected to MultiSynq');
+          if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+          }
+        },
+        onDisconnect: () => {
+          setConnectionStatus('disconnected');
+          console.log('Disconnected from MultiSynq. Attempting to reconnect...');
+          
+          if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+          }
+          reconnectTimeoutRef.current = setTimeout(() => {
+            connectToMultiSynq();
+          }, 3000);
+        },
+        onError: (error) => {
+          console.error('MultiSynq error:', error);
+          setConnectionStatus('disconnected');
+        },
+        onMessage: (data) => {
           handleMessage(data);
-        } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
         }
-      };
+      });
 
-      wsRef.current.onclose = () => {
-        setConnectionStatus('disconnected');
-        console.log('Disconnected from MultiSynq. Attempting to reconnect...');
-        
-        if (reconnectTimeoutRef.current) {
-          clearTimeout(reconnectTimeoutRef.current);
-        }
-        reconnectTimeoutRef.current = setTimeout(() => {
-          connectToMultiSynq();
-        }, 3000);
-      };
-
-      wsRef.current.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        wsRef.current.close();
-      };
+      clientRef.current.connect();
     } catch (error) {
       console.error('Error connecting to MultiSynq:', error);
       setConnectionStatus('disconnected');
@@ -97,60 +92,89 @@ export function useMultiSynq() {
   };
 
   const sendMessage = (message) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(message));
+    if (clientRef.current?.isConnected()) {
+      clientRef.current.send(message);
     } else {
-      console.error('WebSocket is not connected. Message not sent:', message);
+      console.error('MultiSynq client is not connected. Message not sent:', message);
     }
   };
 
   const joinRoom = async (roomId, playerAddress) => {
-    sendMessage({
-      type: 'join_room',
-      roomId,
-      player: {
+    if (!clientRef.current?.isConnected()) {
+      throw new Error('MultiSynq client is not connected');
+    }
+
+    try {
+      await clientRef.current.joinRoom(roomId, {
         id: playerAddress,
         address: playerAddress,
         name: `Player ${playerAddress.slice(0, 6)}...${playerAddress.slice(-4)}`,
         score: 0
-      }
-    });
+      });
 
-    // Simulate receiving game data after joining
-    const mockGameData = {
-      roomId,
-      currentQuestion: generateMockQuestions()[0],
-      questions: generateMockQuestions(),
-      currentQuestionIndex: 0,
-      gameStatus: 'active',
-      timeRemaining: 30
-    };
-    setGameData(mockGameData);
-    setPlayers([{
-      id: playerAddress,
-      address: playerAddress,
-      name: `Player ${playerAddress.slice(0, 6)}...${playerAddress.slice(-4)}`,
-      score: 0
-    }]);
+      // Simulate receiving game data after joining
+      const mockGameData = {
+        roomId,
+        currentQuestion: generateMockQuestions()[0],
+        questions: generateMockQuestions(),
+        currentQuestionIndex: 0,
+        gameStatus: 'active',
+        timeRemaining: 30
+      };
+      setGameData(mockGameData);
+      setPlayers([{
+        id: playerAddress,
+        address: playerAddress,
+        name: `Player ${playerAddress.slice(0, 6)}...${playerAddress.slice(-4)}`,
+        score: 0
+      }]);
+    } catch (error) {
+      console.error('Error joining room:', error);
+      throw error;
+    }
   };
 
-  const leaveRoom = (roomId) => {
-    sendMessage({
-      type: 'leave_room',
-      roomId
-    });
+  const leaveRoom = async (roomId) => {
+    if (clientRef.current?.isConnected()) {
+      try {
+        await clientRef.current.leaveRoom(roomId);
+      } catch (error) {
+        console.error('Error leaving room:', error);
+      }
+    }
     setGameData(null);
     setPlayers([]);
   };
 
-  const sendAnswer = (questionId, answerIndex, playerAddress) => {
-    sendMessage({
-      type: 'submit_answer',
-      questionId,
-      answerIndex,
-      playerId: playerAddress,
-      timestamp: Date.now()
-    });
+  const sendAnswer = async (questionId, answerIndex, playerAddress) => {
+    if (!clientRef.current?.isConnected()) {
+      throw new Error('MultiSynq client is not connected');
+    }
+
+    try {
+      await clientRef.current.sendGameAction('submit_answer', {
+        questionId,
+        answerIndex,
+        playerId: playerAddress,
+        timestamp: Date.now()
+      });
+    } catch (error) {
+      console.error('Error sending answer:', error);
+      throw error;
+    }
+  };
+
+  const sendGameAction = async (actionType, actionData) => {
+    if (!clientRef.current?.isConnected()) {
+      throw new Error('MultiSynq client is not connected');
+    }
+
+    try {
+      await clientRef.current.sendGameAction(actionType, actionData);
+    } catch (error) {
+      console.error('Error sending game action:', error);
+      throw error;
+    }
   };
 
   const generateMockQuestions = () => [
@@ -224,6 +248,7 @@ export function useMultiSynq() {
     joinRoom,
     leaveRoom,
     sendAnswer,
+    sendGameAction,
     sendMessage
   };
 }
